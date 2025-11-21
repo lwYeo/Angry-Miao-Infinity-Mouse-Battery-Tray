@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>false</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyTitle>Angry Miao Infinity Mouse Battery Tray</AssemblyTitle>
+    <Authors>Lip Wee Yeo</Authors>
+    <Product>Angry Miao Infinity Mouse Battery Tray</Product>
+    <PlatformTarget>x86</PlatformTarget>
+    <PublishTrimmed>True</PublishTrimmed>
+    <PublishAot>True</PublishAot>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AMInfinityBattery\AMInfinityBattery.csproj" />
+  </ItemGroup>
+	
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App.WindowsForms" />
+  </ItemGroup>
+	
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <Exec Command="@ECHO off&#xD;&#xA;SETLOCAL enabledelayedexpansion&#xD;&#xA;&#xD;&#xA;IF NOT &quot;%25NO_POSTBUILD%25&quot;==&quot;1&quot; (&#xD;&#xA;  SETLOCAL&#xD;&#xA;  SET NO_POSTBUILD=1&#xD;&#xA;  ECHO Publishing $(ProjectName) $(ConfigurationName):$(PlatformName)&#xD;&#xA;&#xD;&#xA;  IF /I &quot;$(ConfigurationName)&quot;==&quot;Debug&quot; (&#xD;&#xA;    dotnet publish &quot;$(ProjectPath)&quot; -c $(ConfigurationName) -r win-x86 -p:PublishSingleFile=true -p:SelfContained=true -p:PublishTrimmed=true -p:TrimMode=link -o bin\Debug\net10.0-windows\publish\&#xD;&#xA;  )&#xD;&#xA;  IF /I &quot;$(ConfigurationName)&quot;==&quot;Release&quot; (&#xD;&#xA;    dotnet publish &quot;$(ProjectPath)&quot; -c $(ConfigurationName) -r win-x86 -p:PublishSingleFile=true -p:SelfContained=true -p:PublishTrimmed=true -p:TrimMode=link -o bin\Release\net10.0-windows\publish\&#xD;&#xA;  )&#xD;&#xA;)" />
+  </Target>
+
+</Project>
