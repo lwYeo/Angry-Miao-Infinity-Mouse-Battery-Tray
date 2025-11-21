@@ -115,7 +115,6 @@ AMInfinityBatterySysTray\bin\Release\net10.0-windows\publish
 
 Contains:
 - ✔ Final executable  
-- ✔ Required runtime files  
 
 ---
 
