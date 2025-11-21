@@ -37,7 +37,8 @@ The main deliverable in this repository is:
 
 ### 🚀 **Lightweight**
 - Tiny footprint  
-- No popups or intrusive background activity  
+- No intrusive background activity
+- Minimal popup at system tray on low battery  
 - Safe to leave running at all times  
 
 ---
