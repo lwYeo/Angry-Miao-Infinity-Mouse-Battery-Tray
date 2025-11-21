@@ -132,5 +132,5 @@ Right-click it to view battery levels or toggle auto-start.
 ---
 
 # 📜 License
-(Insert your chosen license here, if applicable.)
+[MIT License](https://github.com/lwYeo/Angry-Miao-Infinity-Mouse-Battery-Tray/blob/master/LICENSE)
 
