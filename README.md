@@ -131,7 +131,7 @@ AMInfinityBatterySysTray.exe
 ```
 
 You will see an icon appear in the Windows system tray.  
-Right-click it to view battery levels or toggle auto-start.
+Mouse hover it to view battery levels or right-click to toggle auto-start or close.
 
 ---
 
