@@ -123,9 +123,10 @@ namespace AMInfinityBatterySysTray
             if (mouseBattery.HasValue)
             {
                 // Check if battery level has increased since last check.
-                if (mouseBattery >= (_lastMouseBatteryThresholdCheck ?? 100))
+                if (mouseBattery > (_lastMouseBatteryThresholdCheck ?? 100))
                 {
                     _notifiedThresholds.Clear();
+                    _trayIcon.Icon = SystemIcons.Information;
                 }
                 else
                 {
@@ -136,6 +137,8 @@ namespace AMInfinityBatterySysTray
                             // Show notification.
                             if (threshold <= 5)
                             {
+                                _trayIcon.Icon = SystemIcons.Error;
+
                                 _trayIcon.ShowBalloonTip(3_000, "Critical Battery Warning",
                                     $"Mouse battery is at {mouseBattery}%.\nDongle battery is at {dongleBattery}%.",
                                     ToolTipIcon.Error);

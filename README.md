@@ -27,11 +27,13 @@ The main deliverable in this repository is:
 ### 🎛️ **System Tray Application**
 - Runs quietly in the Windows notification area  
 - No window opens on startup  
+- No admin privileges required
 - Right-click tray icon to access features  
 
 ### 🔋 **Mouse + Dongle Battery Levels**
 - Displays **mouse battery percentage**  
 - Displays **dongle battery percentage**
+- Icon changes to red when battery is critically low (<=5%)
 
 ### ⚙️ **Auto-Start Toggle**
 - Enable “start with Windows”  
