@@ -14,6 +14,8 @@ _A lightweight Windows system tray utility for monitoring the Angry Miao Infinit
 
 The **Angry Miao Infinity Mouse Battery Tray** is a small background application that runs in the Windows system tray and displays **battery levels for both the mouse and its dongle**. It is designed to be minimal, silent, and reliable — perfect for users who want quick access to battery information without launching a full-sized application.
 
+<img width="405" height="166" alt="image" src="https://github.com/user-attachments/assets/108edb7c-1e5e-4839-b76f-0935b5997e39" />
+
 The main deliverable in this repository is:
 
 👉 **`AMInfinityBatterySysTray`** — a Windows tray executable built on .NET.
