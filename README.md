@@ -25,31 +25,35 @@ The main deliverable in this repository is:
 # 🧑‍💻 Features (For End Users)
 
 ### 🎛️ **System Tray Application**
-- Runs quietly in the Windows notification area  
-- No window opens on startup  
+- Runs quietly in the Windows notification area
+- Minimal popup at system tray on low battery (can be disabled, except critical low battery)
+- No window opens on startup
 - No admin privileges required
-- Right-click tray icon to access features  
+- Right-click tray icon to access features
 
 ### 🔋 **Mouse + Dongle Battery Levels**
-- Displays **mouse battery percentage**  
+- Displays **mouse battery percentage**
 - Displays **dongle battery percentage**
+- Icon changes to yellow when battery is low (<=30%)
 - Icon changes to red when battery is critically low (<=5%)
 
 ### ⚙️ **Auto-Start Toggle**
-- Enable “start with Windows”  
-- Disable auto-start anytime  
+- Enable “start with Windows”
+- Disable auto-start anytime
 
 ### 🚀 **Lightweight**
-- Tiny footprint  
+- Tiny footprint
 - No intrusive background activity
-- Minimal popup at system tray on low battery  
-- Safe to leave running at all times  
+- Safe to leave running at all times
 
 ---
 
 # 🧩 Developer Overview
 
 The `AMInfinityBatterySysTray` project is a WinForms-based, windowless tray app.
+Auto start and popup preferences are stored in the Windows Registry.
+- Auto start: `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`
+- Popup preferences: `HKEY_CURRENT_USER\Software\AMInfinityBatterySysTray`
 
 ### Key Components
 
@@ -58,6 +62,7 @@ The `AMInfinityBatterySysTray` project is a WinForms-based, windowless tray app.
 | **Program.cs** | Entry point, sets up tray message loop |
 | **TrayContext.cs** | Manages tray icon + menu |
 | **StartupManager.cs** | Handles registry auto-start |
+| **AppSettingsManager.cs** | Handles registry popup settings |
 | **AMInfinityBattery** | Core logic for reading mouse & dongle battery |
 
 ---
@@ -73,6 +78,7 @@ AMInfinityBattery/
 │   ├── Program.cs
 │   ├── TrayContext.cs
 │   ├── StartupManager.cs
+│   ├── AppSettingsManager.cs
 │   └── AMInfinityBatterySysTray.csproj
 │
 ├── TestConsole/                     # Console-based testing utility

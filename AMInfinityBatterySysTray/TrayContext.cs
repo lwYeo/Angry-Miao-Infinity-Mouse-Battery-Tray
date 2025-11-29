@@ -1,7 +1,7 @@
-﻿using System.Windows.Forms;
-using System.Drawing;
-using AMInfinityBattery;
+﻿using AMInfinityBattery;
 using HidSharp;
+using System.Drawing;
+using System.Windows.Forms;
 
 namespace AMInfinityBatterySysTray
 {
@@ -12,11 +12,13 @@ namespace AMInfinityBatterySysTray
 
         private readonly NotifyIcon _trayIcon;
         private readonly System.Windows.Forms.Timer _timer;
+        private readonly SemaphoreSlim _updateLock = new(1, 1);
 
-        private StartupManager? _startupManager;
+        private (bool Popup30, bool Popup20, bool Popup10) _popupSettings;
 
-        private int? _lastMouseBatteryThresholdCheck;
-        private int? _lastDongleBatteryThresholdCheck;
+        private int? _lastMouseBatteryCheck;
+        private int? _lastDongleBatteryCheck;
+        private ToolTipIcon? _LastPopupIcon;
 
         private DateTime _lastHover;
         private HidDevice? _device;
@@ -36,7 +38,9 @@ namespace AMInfinityBatterySysTray
             _trayIcon.ContextMenuStrip.Items.Add("Exit", null, (_, __) => ExitThread());
 
             // Handle mouse hover to update battery status.
-            _trayIcon.MouseMove += OnTrayIconMouseMove;
+            _trayIcon.MouseMove += (s, e) => _ = OnTrayIconMouseMove(s, e);
+            _trayIcon.DoubleClick += (_, __)
+                => ShowBatteryPopup(Program.ApplicationName, _LastPopupIcon ?? ToolTipIcon.Info, _lastMouseBatteryCheck, _lastDongleBatteryCheck);
 
             // Set up timer to update battery status every 10 seconds.
             _timer = new System.Windows.Forms.Timer
@@ -47,75 +51,137 @@ namespace AMInfinityBatterySysTray
             _timer.Start();
 
             // Allow immediate battery threshold check.
-            _lastMouseBatteryThresholdCheck = 100;
+            _lastMouseBatteryCheck = 100;
 
             // Initialize Startup Manager on application idle, after SynchronizationContext is ready.
-            Application.Idle += InitializeStartupManager;
+            Application.Idle += OnFirstIdle;
         }
 
         protected override void ExitThreadCore()
         {
             _timer.Stop();
+            _timer.Dispose();
+            _updateLock.Dispose();
             _trayIcon.Visible = false;
             _trayIcon.Dispose();
 
             base.ExitThreadCore();
         }
 
-        private async void InitializeStartupManager(object? sender, EventArgs e)
+        private void OnFirstIdle(object? sender, EventArgs e)
         {
             // Unsubscribe from Idle event, we only need to run this once.
-            Application.Idle -= InitializeStartupManager;
+            Application.Idle -= OnFirstIdle;
+            _ = InitializeStartupManager(sender, e);
+        }
 
-            // Initial battery status update.
-            await UpdateBatteryAsync();
+        private async Task InitializeStartupManager(object? sender, EventArgs e)
+        {
+            try
+            {
+                // Initialize buttons after initial load.
+                await InitializeMenu_CreateStartupButton(0);
+                await InitializeMenu_CreateBatteryPopupButton(1, "Popup30", "30% popup");
+                await InitializeMenu_CreateBatteryPopupButton(2, "Popup20", "20% popup");
+                await InitializeMenu_CreateBatteryPopupButton(3, "Popup10", "10% popup");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to initialize application: {ex.Message}", Program.ApplicationName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ExitThread();
+            }
+            finally
+            {
+                // Initial battery status update.
+                await UpdateBatteryAsync();
 
-            if (_notifiedThresholds.Count == 0)
-                _trayIcon.ShowBalloonTip(3_000, Program.ApplicationName,
-                    $"Mouse battery is at {_lastMouseBatteryThresholdCheck?.ToString() ?? "--"}%.\nDongle battery is at {_lastDongleBatteryThresholdCheck?.ToString() ?? "--"}%.",
-                    ToolTipIcon.Info);
+                // Show initial battery status popup if no thresholds have been notified yet.
+                if (_notifiedThresholds.Count == 0)
+                    ShowBatteryPopup(Program.ApplicationName, ToolTipIcon.Info, _lastMouseBatteryCheck, _lastDongleBatteryCheck);
+            }
+        }
 
-            // Initialize Startup Manager after initial load.
-            _startupManager = new StartupManager();
-
+        private async Task InitializeMenu_CreateStartupButton(int buttonIndex)
+        {
             // Repair startup entry if needed.
-            _startupManager.Repair();
+            await Task.Run(StartupManager.Repair);
 
             // Add Start on logon menu item.
-            var startupItem = new ToolStripMenuItem("Start on logon")
+            var item = new ToolStripMenuItem("Start on logon")
             {
-                Checked = _startupManager.IsEnabled()
+                Checked = StartupManager.IsEnabled()
             };
 
-            startupItem.Click += (s, e) =>
+            item.Click += (s, e) =>
             {
-                bool newState = !startupItem.Checked;
-                _startupManager.SetEnabled(newState);
-                startupItem.Checked = newState;
+                bool newState = !item.Checked;
+                StartupManager.SetEnabled(newState);
+                item.Checked = newState;
             };
 
-            _trayIcon.ContextMenuStrip?.Items.Insert(0, startupItem);
+            _trayIcon.ContextMenuStrip?.Items.Insert(buttonIndex, item);
+        }
+
+        private async Task InitializeMenu_CreateBatteryPopupButton(int buttonIndex, string fieldName, string label)
+        {
+            bool result = false;
+
+            await Task.Run(() =>
+            {
+                // Load initial popup settings from registry.
+                var resultInt = AppSettingsManager.GetInt(fieldName) ?? 1;
+                result = resultInt != 0;
+            });
+
+            UpdateBatteryPopupSettings(fieldName, result);
+
+            var item = new ToolStripMenuItem(label)
+            {
+                Checked = result
+            };
+
+            item.Click += (s, e) =>
+            {
+                bool newState = !item.Checked;
+                AppSettingsManager.SetInt(fieldName, newState ? 1 : 0);
+                UpdateBatteryPopupSettings(fieldName, newState);
+                item.Checked = newState;
+            };
+
+            _trayIcon.ContextMenuStrip?.Items.Insert(buttonIndex, item);
         }
 
         private async Task UpdateBatteryAsync()
         {
-            // Offload HID I/O to a background thread.
-            var (mouse, dongle) = await Task.Run(() =>
+            if (!await _updateLock.WaitAsync(0)) return;
+            try
             {
-                if (_device == null)
-                    _device = LocalDevice.Get(Constants.VendorId, Constants.ProductId);
+                // Offload HID I/O to a background thread.
+                var (mouse, dongle) = await Task.Run(() =>
+                {
+                    try
+                    {
+                        _device ??= LocalDevice.Get(Constants.VendorId, Constants.ProductId);
 
-                if (_device == null)
-                    return (null, null);
+                        return _device == null
+                            ? ((int? Mouse, int? Dongle))(null, null)
+                            : Reader.GetBattery(_device);
+                    }
+                    catch
+                    {
+                        // On any error, reset device reference for next attempt.
+                        _device = null;
+                        return ((int? Mouse, int? Dongle))(null, null);
+                    }
+                });
+                
+                // Update tray icon text.
+                _trayIcon.Text = TextFormat(mouse, dongle);
 
-                return Reader.GetBattery(_device);
-            });
-
-            // Update tray icon text.
-            _trayIcon.Text = TextFormat(mouse, dongle);
-
-            // Check for battery threshold notifications.
-            CheckBatteryThresholds(mouse, dongle);
+                // Check for battery threshold notifications.
+                CheckBatteryThresholds(mouse, dongle);
+            }
+            finally { _updateLock.Release(); }
         }
 
         private void CheckBatteryThresholds(int? mouseBattery, int? dongleBattery)
@@ -123,58 +189,99 @@ namespace AMInfinityBatterySysTray
             if (mouseBattery.HasValue)
             {
                 // Check if battery level has increased since last check.
-                if (mouseBattery > (_lastMouseBatteryThresholdCheck ?? 100))
+                if (mouseBattery > (_lastMouseBatteryCheck ?? 100))
                 {
                     _notifiedThresholds.Clear();
                     _trayIcon.Icon = SystemIcons.Information;
                 }
                 else
                 {
+                    var isNotifiedLowBattery = false;
+
                     foreach (var threshold in _batteryThresholds)
                     {
                         if (mouseBattery <= threshold && !_notifiedThresholds.Contains(threshold))
                         {
                             // Show notification.
-                            if (threshold <= 5)
+                            if (threshold == 5)
                             {
                                 _trayIcon.Icon = SystemIcons.Error;
+                                _notifiedThresholds.Add(threshold);
 
-                                _trayIcon.ShowBalloonTip(3_000, "Critical Battery Warning",
-                                    $"Mouse battery is at {mouseBattery}%.\nDongle battery is at {dongleBattery}%.",
-                                    ToolTipIcon.Error);
+                                ShowBatteryPopup("Critical Battery Warning", ToolTipIcon.Error, mouseBattery, dongleBattery);
+                                break;
                             }
                             else
                             {
-                                _trayIcon.ShowBalloonTip(3_000, "Low Battery Warning",
-                                    $"Mouse battery is at {mouseBattery}%.\nDongle battery is at {dongleBattery}%.",
-                                    ToolTipIcon.Warning);
-                            }
+                                _trayIcon.Icon = SystemIcons.Warning;
 
-                            _notifiedThresholds.Add(threshold);
+                                // Continue scanning thresholds if popup disabled.
+                                if (threshold == 10 && !_popupSettings.Popup10)
+                                    continue;
+                                else if (threshold == 20 && !_popupSettings.Popup20)
+                                    continue;
+                                else if (threshold == 30 && !_popupSettings.Popup30)
+                                    continue;
+
+                                _notifiedThresholds.Add(threshold);
+
+                                if (!isNotifiedLowBattery) // Only show one low battery popup at a time.
+                                {
+                                    isNotifiedLowBattery = true;
+                                    ShowBatteryPopup("Low Battery Warning", ToolTipIcon.Warning, mouseBattery, dongleBattery);
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            _lastMouseBatteryThresholdCheck = mouseBattery;
-            _lastDongleBatteryThresholdCheck = dongleBattery;
+            _lastMouseBatteryCheck = mouseBattery;
+            _lastDongleBatteryCheck = dongleBattery;
         }
 
-        private async void OnTrayIconMouseMove(object? sender, MouseEventArgs e)
+        private async Task OnTrayIconMouseMove(object? sender, MouseEventArgs e)
         {
-            // Throttle updates to once per second on constant mouse hover.
-            if ((DateTime.Now - _lastHover).TotalMilliseconds >= 1000)
+            try
             {
-                // Update battery status on mouse hover.
-                await UpdateBatteryAsync();
+                // Throttle updates to once per second on constant mouse hover.
+                if ((DateTime.Now - _lastHover).TotalMilliseconds >= 1000)
+                {
+                    // Update battery status on mouse hover.
+                    await UpdateBatteryAsync();
 
-                _lastHover = DateTime.Now;
+                    _lastHover = DateTime.Now;
+                }
             }
+            catch { } // Ignore exceptions from hover updates.
         }
 
         private static string TextFormat(int? battery, int? dongle)
         {
-            return $"Angry Miao Infinity Battery\nMouse: {battery?.ToString() ?? "--"}% - Dongle: {dongle?.ToString() ?? "--"}%";
+            return $"Angry Miao Infinity Battery\r\nMouse: {battery?.ToString() ?? "--"}% - Dongle: {dongle?.ToString() ?? "--"}%";
+        }
+
+        private void ShowBatteryPopup(string title, ToolTipIcon icon, int? mouseBattery, int? dongleBattery, int duration = 5_000)
+        {
+            string message = $"Mouse battery is at {mouseBattery?.ToString() ?? "--"}%.\r\nDongle battery is at {dongleBattery?.ToString() ?? "--"}%.";
+            _trayIcon.ShowBalloonTip(duration, title, message, icon);
+            _LastPopupIcon = icon;
+        }
+
+        private void UpdateBatteryPopupSettings(string fieldName, bool result)
+        {
+            switch (fieldName)
+            {
+                case "Popup30":
+                    _popupSettings.Popup30 = result;
+                    break;
+                case "Popup20":
+                    _popupSettings.Popup20 = result;
+                    break;
+                case "Popup10":
+                    _popupSettings.Popup10 = result;
+                    break;
+            }
         }
     }
 }

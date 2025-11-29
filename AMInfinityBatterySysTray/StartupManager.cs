@@ -3,21 +3,16 @@ using System.Windows.Forms;
 
 namespace AMInfinityBatterySysTray
 {
-    public class StartupManager
+    internal static class StartupManager
     {
         private const string RUN_KEY = @"Software\Microsoft\Windows\CurrentVersion\Run";
 
-        private readonly string _exePath;
-
-        public StartupManager()
-        {
-            _exePath = "\"" + Application.ExecutablePath + "\"";
-        }
+        private static readonly string _exePath = $"\"{Application.ExecutablePath}\"";
 
         /// <summary>
         /// Returns true if the startup entry exists.
         /// </summary>
-        public bool IsEnabled()
+        public static bool IsEnabled()
         {
             using (var key = Registry.CurrentUser.OpenSubKey(RUN_KEY, writable: false))
             {
@@ -30,7 +25,7 @@ namespace AMInfinityBatterySysTray
         /// <summary>
         /// Enables or disables the Run-at-Startup entry.
         /// </summary>
-        public void SetEnabled(bool enabled)
+        public static void SetEnabled(bool enabled)
         {
             using var key = Registry.CurrentUser.OpenSubKey(RUN_KEY, writable: true);
 
@@ -47,7 +42,7 @@ namespace AMInfinityBatterySysTray
         /// or if the file no longer exists.
         /// Safe to call on every application start.
         /// </summary>
-        public void Repair()
+        public static void Repair()
         {
             using (var key = Registry.CurrentUser.OpenSubKey(RUN_KEY, writable: true))
             {
