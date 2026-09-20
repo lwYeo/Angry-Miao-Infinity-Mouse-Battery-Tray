@@ -13,12 +13,13 @@ namespace AMInfinityBatterySysTray
         private readonly NotifyIcon _trayIcon;
         private readonly System.Windows.Forms.Timer _timer;
         private readonly SemaphoreSlim _updateLock = new(1, 1);
+        private readonly object _deviceLock = new();
 
         private (bool Popup30, bool Popup20, bool Popup10) _popupSettings;
 
         private int? _lastMouseBatteryCheck;
         private int? _lastDongleBatteryCheck;
-        private ToolTipIcon? _LastPopupIcon;
+        private ToolTipIcon? _lastPopupIcon;
 
         private DateTime _lastHover;
         private HidDevice? _device;
@@ -40,7 +41,7 @@ namespace AMInfinityBatterySysTray
             // Handle mouse hover to update battery status.
             _trayIcon.MouseMove += (s, e) => _ = OnTrayIconMouseMove(s, e);
             _trayIcon.DoubleClick += (_, __)
-                => ShowBatteryPopup(Program.ApplicationName, _LastPopupIcon ?? ToolTipIcon.Info, _lastMouseBatteryCheck, _lastDongleBatteryCheck);
+                => ShowBatteryPopup(Program.ApplicationName, _lastPopupIcon ?? ToolTipIcon.Info, _lastMouseBatteryCheck, _lastDongleBatteryCheck);
 
             // Set up timer to update battery status every 10 seconds.
             _timer = new System.Windows.Forms.Timer
@@ -159,22 +160,35 @@ namespace AMInfinityBatterySysTray
                 // Offload HID I/O to a background thread.
                 var (mouse, dongle) = await Task.Run(() =>
                 {
+                    HidDevice? device;
+                    lock (_deviceLock)
+                    {
+                        if (_device == null)
+                            _device = LocalDevice.Get(Constants.VendorId, Constants.ProductId);
+                        device = _device;
+                    }
+
+                    if (device == null)
+                        return ((int? Mouse, int? Dongle))(null, null);
+
                     try
                     {
-                        _device ??= LocalDevice.Get(Constants.VendorId, Constants.ProductId);
-
-                        return _device == null
-                            ? ((int? Mouse, int? Dongle))(null, null)
-                            : Reader.GetBattery(_device);
+                        return Reader.GetBattery(device);
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        // On any error, reset device reference for next attempt.
-                        _device = null;
+                        // Log HID read failure for diagnostics.
+                        TryWriteLog($"HID read failed: {ex.Message}");
+
+                        // On error, reset device reference for next attempt.
+                        lock (_deviceLock)
+                        {
+                            _device = null;
+                        }
                         return ((int? Mouse, int? Dongle))(null, null);
                     }
                 });
-                
+
                 // Update tray icon text.
                 _trayIcon.Text = TextFormat(mouse, dongle);
 
@@ -234,10 +248,11 @@ namespace AMInfinityBatterySysTray
                         }
                     }
                 }
-            }
 
-            _lastMouseBatteryCheck = mouseBattery;
-            _lastDongleBatteryCheck = dongleBattery;
+                _lastMouseBatteryCheck = mouseBattery;
+            }
+            if (dongleBattery.HasValue)
+                _lastDongleBatteryCheck = dongleBattery;
         }
 
         private async Task OnTrayIconMouseMove(object? sender, MouseEventArgs e)
@@ -265,7 +280,7 @@ namespace AMInfinityBatterySysTray
         {
             string message = $"Mouse battery is at {mouseBattery?.ToString() ?? "--"}%.\r\nDongle battery is at {dongleBattery?.ToString() ?? "--"}%.";
             _trayIcon.ShowBalloonTip(duration, title, message, icon);
-            _LastPopupIcon = icon;
+            _lastPopupIcon = icon;
         }
 
         private void UpdateBatteryPopupSettings(string fieldName, bool result)
@@ -282,6 +297,18 @@ namespace AMInfinityBatterySysTray
                     _popupSettings.Popup10 = result;
                     break;
             }
+        }
+
+        private static void TryWriteLog(string message)
+        {
+            try
+            {
+                string logDir = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath) ?? "", "logs");
+                Directory.CreateDirectory(logDir);
+                string logFile = Path.Combine(logDir, "am-battery.log");
+                File.AppendAllText(logFile, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {message}\n");
+            }
+            catch { /* Logging is best-effort */ }
         }
     }
 }

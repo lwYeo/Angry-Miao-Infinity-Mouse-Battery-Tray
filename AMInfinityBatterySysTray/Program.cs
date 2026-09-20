@@ -7,15 +7,22 @@ namespace AMInfinityBatterySysTray
     {
         public static readonly string ApplicationName = Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyTitleAttribute>()?.Title ?? "AMInfinityBatterySysTray";
 
-        private static readonly Mutex Mutex = new(false, ApplicationName);
-
         [STAThread]
         static void Main()
         {
-            if (Mutex.WaitOne(0, false))
+            using var mutex = new Mutex(false, ApplicationName);
+
+            if (mutex.WaitOne(0, false))
             {
-                ApplicationConfiguration.Initialize();
-                Application.Run(new TrayContext());
+                try
+                {
+                    ApplicationConfiguration.Initialize();
+                    Application.Run(new TrayContext());
+                }
+                finally
+                {
+                    mutex.ReleaseMutex();
+                }
             }
         }
     }
